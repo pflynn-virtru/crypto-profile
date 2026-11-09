@@ -199,9 +199,14 @@ mod shared_body_tests {
                 .unwrap(),
             key.public_key()
         );
+        let descriptor = crate::backend_arms::MlDsa::rcgen_alg().unwrap();
         assert_eq!(
-            crate::backend_arms::MlDsa::rcgen_alg().unwrap(),
-            rcgen::PublicKeyData::algorithm(&key)
+            descriptor.key_algorithm(),
+            rcgen::PublicKeyData::key_algorithm(&key)
+        );
+        assert_eq!(
+            descriptor.signature_algorithm(),
+            rcgen::SigningKey::algorithm(&key)
         );
     }
 }

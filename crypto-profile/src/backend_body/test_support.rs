@@ -224,6 +224,53 @@ pub(crate) fn certificate_key(a: SignatureAlgorithm) -> Result<CertificateKey, C
     CertificateKey::generate(&r, a)
 }
 
+static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0x1000);
+
+/// `rcgen::CertificateParams::new` with a serial number unique within the process: rcgen derives
+/// one from the key only under its `crypto` feature, which this crate leaves off.
+pub fn certificate_params(
+    subject_alt_names: impl Into<Vec<String>>,
+) -> Result<rcgen::CertificateParams, rcgen::Error> {
+    let mut params = rcgen::CertificateParams::new(subject_alt_names)?;
+    let serial = SERIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    params.serial_number = Some(rcgen::SerialNumber::from(serial));
+    Ok(params)
+}
+
+/// A fresh ML-DSA key of `parameter` that signs certificates through aws-lc-rs directly, for the
+/// parameter sets the crate does not hold; `None` on a module line without ML-DSA.
+pub fn ml_dsa_test_key(parameter: crate::MlDsaParameterSet) -> Option<Box<dyn rcgen::SigningKey>> {
+    super::backend::MlDsa::test_key(parameter)
+}
+
+/// The key identifier rcgen 0.14's `KeyIdMethod::Sha256` derived: the first 20 bytes of SHA-256
+/// over the key's SubjectPublicKeyInfo.
+pub fn key_id(key: &impl rcgen::PublicKeyData) -> rcgen::KeyIdMethod {
+    let digest =
+        aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, &key.subject_public_key_info());
+    rcgen::KeyIdMethod::PreSpecified(digest.as_ref()[..20].to_vec())
+}
+
+fn crl(
+    issuer: &rcgen::Issuer<'_, impl rcgen::SigningKey>,
+    issuer_key: &impl rcgen::PublicKeyData,
+    revoked: bool,
+) -> Result<rustls::pki_types::CertificateRevocationListDer<'static>, String> {
+    let mut params = rcgen::CertificateRevocationListParams::new(
+        rcgen::date_time_ymd(2020, 1, 1),
+        rcgen::date_time_ymd(2040, 1, 1),
+        rcgen::SerialNumber::from(1),
+        key_id(issuer_key),
+    );
+    if revoked {
+        params.revoked_certs = vec![rcgen::RevokedCertParams::new(
+            rcgen::SerialNumber::from(42),
+            rcgen::date_time_ymd(2020, 1, 1),
+        )];
+    }
+    Ok(params.signed_by(issuer).map_err(e)?.der().clone())
+}
+
 /// A fresh CA whose key is `ca` and a `localhost` leaf whose key is a fresh `CertificateKey` of
 /// `key`, admitted against `unrestricted`'s TLS key list as published, so a key the module line
 /// lacks is `CryptoError::Unavailable`.
@@ -234,14 +281,16 @@ pub fn pki(ca: SignatureAlgorithm, key: SignatureAlgorithm) -> Result<Pki, Strin
 /// A fresh CA whose key is `ca` and a `localhost` leaf it issues for `key`.
 pub fn issue(ca: SignatureAlgorithm, key: CertificateKey) -> Result<Pki, String> {
     let ca_key = key_pair(ca).map_err(e)?;
-    let mut ca_params = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(e)?;
+    let mut ca_params = certificate_params(Vec::<String>::new()).map_err(e)?;
     ca_params
         .distinguished_name
         .push(rcgen::DnType::CommonName, "crypto-profile test CA");
-    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    ca_params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+        rcgen::PathLenConstraint::Unconstrained,
+    ));
     let ca_cert = ca_params.self_signed(&ca_key).map_err(e)?;
     let issuer = rcgen::Issuer::new(ca_params, &ca_key);
-    let leaf = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+    let leaf = certificate_params(vec!["localhost".to_string()])
         .map_err(e)?
         .signed_by(key.key_pair(), &issuer)
         .map_err(e)?;
@@ -382,11 +431,14 @@ fn peer_pki(
     fixture: Option<PeerCertificateFixture>,
 ) -> Result<PeerCertificatePki, String> {
     let root_key = key_pair(root).map_err(e)?;
-    let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(e)?;
+    let mut params = certificate_params(Vec::<String>::new()).map_err(e)?;
     params
         .distinguished_name
         .push(rcgen::DnType::CommonName, "conformance root");
-    params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    params.key_identifier_method = key_id(&root_key);
+    params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+        rcgen::PathLenConstraint::Unconstrained,
+    ));
     let sha256 = PeerSha256(&root_key);
     let root_cert = if matches!(fixture, Some(PeerCertificateFixture::RootSha256)) {
         params.self_signed(&sha256).map_err(e)?
@@ -399,10 +451,12 @@ fn peer_pki(
     let intermediate_params = intermediate_key
         .as_ref()
         .map(|_| {
-            let mut p = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(e)?;
+            let mut p = certificate_params(Vec::<String>::new()).map_err(e)?;
             p.distinguished_name
                 .push(rcgen::DnType::CommonName, "conformance intermediate");
-            p.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+            p.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+                rcgen::PathLenConstraint::Unconstrained,
+            ));
             Ok::<_, String>(p)
         })
         .transpose()?;
@@ -416,7 +470,7 @@ fn peer_pki(
     } else {
         "localhost"
     };
-    let mut leaf_params = rcgen::CertificateParams::new(vec![name.into()]).map_err(e)?;
+    let mut leaf_params = certificate_params(vec![name.into()]).map_err(e)?;
     leaf_params.serial_number = Some(rcgen::SerialNumber::from(42));
     if matches!(fixture, Some(PeerCertificateFixture::Expired)) {
         leaf_params.not_before = rcgen::date_time_ymd(2000, 1, 1);
@@ -453,30 +507,11 @@ fn peer_pki(
         Some(PeerCertificateFixture::Sha256Crl | PeerCertificateFixture::RevokedSha256Crl)
     ) {
         let crl_issuer = rcgen::Issuer::new(params, &sha256);
-        crls.push(
-            rcgen::CertificateRevocationListParams {
-                this_update: rcgen::date_time_ymd(2020, 1, 1),
-                next_update: rcgen::date_time_ymd(2040, 1, 1),
-                crl_number: rcgen::SerialNumber::from(1),
-                issuing_distribution_point: None,
-                revoked_certs: if matches!(fixture, Some(PeerCertificateFixture::RevokedSha256Crl))
-                {
-                    vec![rcgen::RevokedCertParams {
-                        serial_number: rcgen::SerialNumber::from(42),
-                        revocation_time: rcgen::date_time_ymd(2020, 1, 1),
-                        reason_code: None,
-                        invalidity_date: None,
-                    }]
-                } else {
-                    vec![]
-                },
-                key_identifier_method: rcgen::KeyIdMethod::Sha256,
-            }
-            .signed_by(&crl_issuer)
-            .map_err(e)?
-            .der()
-            .clone(),
-        );
+        crls.push(crl(
+            &crl_issuer,
+            &root_key,
+            matches!(fixture, Some(PeerCertificateFixture::RevokedSha256Crl)),
+        )?);
     }
     Ok(PeerCertificatePki {
         opposite: None,
@@ -531,16 +566,17 @@ pub fn peer_certificate_fixture(
             SignatureAlgorithm::Rsa3072Sha384,
         )?;
         let issuer_key = key_pair(SignatureAlgorithm::Rsa3072Sha384).map_err(e)?;
-        let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(e)?;
-        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let mut params = certificate_params(Vec::<String>::new()).map_err(e)?;
+        params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+            rcgen::PathLenConstraint::Unconstrained,
+        ));
         let root = params.self_signed(&issuer_key).map_err(e)?;
         let issuer = rcgen::Issuer::new(params, &issuer_key);
         let der = rustls::pki_types::PrivatePkcs8KeyDer::from(
             crypto_profile::__test_data::RSA8192_PKCS8.to_vec(),
         );
-        let key = rcgen::KeyPair::from_pkcs8_der_and_sign_algo(&der, &rcgen::PKCS_RSA_SHA384)
-            .map_err(e)?;
-        let leaf = rcgen::CertificateParams::new(vec!["localhost".into()])
+        let key = ForeignRsa::from_pkcs8(der.secret_pkcs8_der())?;
+        let leaf = certificate_params(vec!["localhost".into()])
             .map_err(e)?
             .signed_by(&key, &issuer)
             .map_err(e)?;
@@ -578,11 +614,15 @@ impl rcgen::PublicKeyData for PeerSha256<'_> {
     fn der_bytes(&self) -> &[u8] {
         rcgen::PublicKeyData::der_bytes(self.0)
     }
-    fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
-        &rcgen::PKCS_RSA_SHA256
+    fn key_algorithm(&self) -> &'static rcgen::PublicKeyAlgorithm {
+        &rcgen::key_alg::RSA
     }
 }
 impl rcgen::SigningKey for PeerSha256<'_> {
+    fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
+        &rcgen::sig_alg::RSA_PKCS1_SHA256
+    }
+
     fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
         let der = self
             .0
@@ -598,6 +638,46 @@ impl rcgen::SigningKey for PeerSha256<'_> {
             &mut signature,
         )
         .map_err(|_| rcgen::Error::RemoteKeyError)?;
+        Ok(signature)
+    }
+}
+
+/// An RSA key outside the crate's sizes, signing certificates through aws-lc-rs directly.
+struct ForeignRsa {
+    key: aws_lc_rs::signature::RsaKeyPair,
+    public: Vec<u8>,
+}
+impl ForeignRsa {
+    fn from_pkcs8(der: &[u8]) -> Result<Self, String> {
+        let key = aws_lc_rs::signature::RsaKeyPair::from_pkcs8(der).map_err(e)?;
+        let public = aws_lc_rs::signature::KeyPair::public_key(&key)
+            .as_ref()
+            .to_vec();
+        Ok(Self { key, public })
+    }
+}
+impl rcgen::PublicKeyData for ForeignRsa {
+    fn der_bytes(&self) -> &[u8] {
+        &self.public
+    }
+    fn key_algorithm(&self) -> &'static rcgen::PublicKeyAlgorithm {
+        &rcgen::key_alg::RSA
+    }
+}
+impl rcgen::SigningKey for ForeignRsa {
+    fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
+        &rcgen::sig_alg::RSA_PKCS1_SHA384
+    }
+    fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
+        let mut signature = vec![0; self.key.public_modulus_len()];
+        self.key
+            .sign(
+                &aws_lc_rs::signature::RSA_PKCS1_SHA384,
+                &aws_lc_rs::rand::SystemRandom::new(),
+                msg,
+                &mut signature,
+            )
+            .map_err(|_| rcgen::Error::RemoteKeyError)?;
         Ok(signature)
     }
 }
@@ -782,26 +862,31 @@ pub fn drive_typed(
 
 fn peer_selected_path(bad_first: bool) -> Result<PeerCertificatePki, String> {
     let ca_params = |name: &str| {
-        let mut p = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(e)?;
-        p.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let mut p = certificate_params(Vec::<String>::new()).map_err(e)?;
+        p.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+            rcgen::PathLenConstraint::Unconstrained,
+        ));
         p.distinguished_name.push(rcgen::DnType::CommonName, name);
         Ok::<_, String>(p)
     };
     let good_key = key_pair(SignatureAlgorithm::EcdsaP384Sha384).map_err(e)?;
     let bad_key = key_pair(SignatureAlgorithm::EcdsaP256Sha256).map_err(e)?;
-    let gp = ca_params("good root")?;
-    let bp = ca_params("bad root")?;
+    let mut gp = ca_params("good root")?;
+    gp.key_identifier_method = key_id(&good_key);
+    let mut bp = ca_params("bad root")?;
+    bp.key_identifier_method = key_id(&bad_key);
     let gr = gp.self_signed(&good_key).map_err(e)?;
     let br = bp.self_signed(&bad_key).map_err(e)?;
     let gi = rcgen::Issuer::new(gp, &good_key);
     let bi = rcgen::Issuer::new(bp, &bad_key);
     let ik = key_pair(SignatureAlgorithm::EcdsaP384Sha384).map_err(e)?;
-    let ip = ca_params("shared intermediate")?;
+    let mut ip = ca_params("shared intermediate")?;
+    ip.key_identifier_method = key_id(&ik);
     let good = ip.signed_by(&ik, &gi).map_err(e)?;
     let bad = ip.signed_by(&ik, &bi).map_err(e)?;
     let ii = rcgen::Issuer::new(ip, &ik);
     let key = certificate_key(SignatureAlgorithm::EcdsaP384Sha384).map_err(e)?;
-    let leaf = rcgen::CertificateParams::new(vec!["localhost".into()])
+    let leaf = certificate_params(vec!["localhost".into()])
         .map_err(e)?
         .signed_by(key.key_pair(), &ii)
         .map_err(e)?;
@@ -813,22 +898,11 @@ fn peer_selected_path(bad_first: bool) -> Result<PeerCertificatePki, String> {
     } else {
         vec![leaf.der().clone(), good.der().clone(), bad.der().clone()]
     };
-    let crls = [&gi, &bi, &ii]
-        .into_iter()
-        .map(|issuer| {
-            rcgen::CertificateRevocationListParams {
-                this_update: rcgen::date_time_ymd(2020, 1, 1),
-                next_update: rcgen::date_time_ymd(2040, 1, 1),
-                crl_number: rcgen::SerialNumber::from(1),
-                issuing_distribution_point: None,
-                revoked_certs: vec![],
-                key_identifier_method: rcgen::KeyIdMethod::Sha256,
-            }
-            .signed_by(issuer)
-            .map(|crl| crl.der().clone())
-            .map_err(e)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let crls = vec![
+        crl(&gi, &good_key, false)?,
+        crl(&bi, &bad_key, false)?,
+        crl(&ii, &ik, false)?,
+    ];
     Ok(PeerCertificatePki {
         opposite: None,
         roots,
@@ -858,18 +932,21 @@ pub struct IdentityPki {
 /// Each call's CA has a distinct name.
 pub fn identity_pki(
     leaf: SignatureAlgorithm,
-    sans: Vec<rcgen::SanType>,
+    sans: Vec<rcgen::GeneralName>,
     ekus: Vec<rcgen::ExtendedKeyUsagePurpose>,
     revoked: bool,
 ) -> Result<IdentityPki, String> {
     let ca_key = key_pair(SignatureAlgorithm::EcdsaP384Sha384).map_err(e)?;
-    let mut ca_params = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(e)?;
+    let mut ca_params = certificate_params(Vec::<String>::new()).map_err(e)?;
     let n = IDENTITY_CAS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     ca_params.distinguished_name.push(
         rcgen::DnType::CommonName,
         format!("crypto-profile identity CA {n}"),
     );
-    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    ca_params.key_identifier_method = key_id(&ca_key);
+    ca_params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+        rcgen::PathLenConstraint::Unconstrained,
+    ));
     ca_params.key_usages = vec![
         rcgen::KeyUsagePurpose::KeyCertSign,
         rcgen::KeyUsagePurpose::CrlSign,
@@ -877,30 +954,12 @@ pub fn identity_pki(
     let ca_cert = ca_params.self_signed(&ca_key).map_err(e)?;
     let issuer = rcgen::Issuer::new(ca_params, &ca_key);
     let leaf_key = certificate_key(leaf).map_err(e)?;
-    let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(e)?;
+    let mut params = certificate_params(Vec::<String>::new()).map_err(e)?;
     params.subject_alt_names = sans;
     params.extended_key_usages = ekus;
     params.serial_number = Some(rcgen::SerialNumber::from(42));
     let leaf_cert = params.signed_by(leaf_key.key_pair(), &issuer).map_err(e)?;
-    let crl = rcgen::CertificateRevocationListParams {
-        this_update: rcgen::date_time_ymd(2020, 1, 1),
-        next_update: rcgen::date_time_ymd(2040, 1, 1),
-        crl_number: rcgen::SerialNumber::from(1),
-        issuing_distribution_point: None,
-        revoked_certs: if revoked {
-            vec![rcgen::RevokedCertParams {
-                serial_number: rcgen::SerialNumber::from(42),
-                revocation_time: rcgen::date_time_ymd(2020, 1, 1),
-                reason_code: None,
-                invalidity_date: None,
-            }]
-        } else {
-            vec![]
-        },
-        key_identifier_method: rcgen::KeyIdMethod::Sha256,
-    }
-    .signed_by(&issuer)
-    .map_err(e)?;
+    let crl = crl(&issuer, &ca_key, revoked)?;
     let mut roots = rustls::RootCertStore::empty();
     roots.add(ca_cert.der().clone()).map_err(e)?;
     Ok(IdentityPki {
@@ -909,6 +968,6 @@ pub fn identity_pki(
         key: rustls::pki_types::PrivateKeyDer::Pkcs8(
             leaf_key.to_pkcs8_der().map_err(e)?.to_vec().into(),
         ),
-        crls: vec![crl.der().clone()],
+        crls: vec![crl],
     })
 }

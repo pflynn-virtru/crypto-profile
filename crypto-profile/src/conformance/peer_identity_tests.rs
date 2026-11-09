@@ -117,12 +117,12 @@ macro_rules! __conformance_peer_identity_tests {
                 p
             }
 
-            fn uri(s: &str) -> rcgen::SanType {
-                rcgen::SanType::URI(s.try_into().unwrap())
+            fn uri(s: &str) -> rcgen::GeneralName {
+                rcgen::GeneralName::URI(s.try_into().unwrap())
             }
 
             pub(super) fn leaf(
-                sans: Vec<rcgen::SanType>,
+                sans: Vec<rcgen::GeneralName>,
                 eku: rcgen::ExtendedKeyUsagePurpose,
             ) -> IdentityPki {
                 test_support::identity_pki(S::EcdsaP384Sha384, sans, vec![eku], false).unwrap()
@@ -166,7 +166,7 @@ macro_rules! __conformance_peer_identity_tests {
             pub(super) fn host() -> IdentityPki {
                 test_support::identity_pki(
                     S::EcdsaP384Sha384,
-                    vec![rcgen::SanType::DnsName("localhost".try_into().unwrap())],
+                    vec![rcgen::GeneralName::DnsName("localhost".try_into().unwrap())],
                     vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth],
                     false,
                 )
@@ -249,7 +249,7 @@ macro_rules! __conformance_peer_identity_tests {
             fn the_identity_check_replaces_the_server_name_check() {
                 let pki = leaf(
                     vec![
-                        rcgen::SanType::DnsName("elsewhere.example".try_into().unwrap()),
+                        rcgen::GeneralName::DnsName("elsewhere.example".try_into().unwrap()),
                         uri(A),
                     ],
                     server_side(),

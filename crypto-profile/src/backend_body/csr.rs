@@ -68,15 +68,17 @@ pub fn generate_csr(key: &CertificateKey, p: &CsrParams) -> Result<String, Crypt
     params.distinguished_name = dn;
     let mut sans = Vec::new();
     for d in &p.dns_names {
-        sans.push(rcgen::SanType::DnsName(
+        sans.push(rcgen::GeneralName::DnsName(
             d.as_str().try_into().map_err(name)?,
         ));
     }
     for ip in &p.ip_addresses {
-        sans.push(rcgen::SanType::IpAddress(*ip));
+        sans.push(rcgen::GeneralName::IpAddress(*ip));
     }
     for u in &p.uris {
-        sans.push(rcgen::SanType::URI(u.as_str().try_into().map_err(name)?));
+        sans.push(rcgen::GeneralName::URI(
+            u.as_str().try_into().map_err(name)?,
+        ));
     }
     params.subject_alt_names = sans;
     params.extended_key_usages = p

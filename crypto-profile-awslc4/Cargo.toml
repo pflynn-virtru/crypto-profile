@@ -24,11 +24,11 @@ crypto-profile = { path = "../crypto-profile", version = "=0.10.0" }
 # source. The module in CMVP review is AWS-LC-FIPS v4.0; whether this build is that module is
 # unverified, and this crate claims neither that nor any validation of its own.
 # Pin aws-lc-rs so resolution cannot change the selected FIPS module provenance.
-aws-lc-rs = { version = "=1.19.0", features = ["fips", "ring-io"] }
+aws-lc-rs = { version = "=1.19.0", default-features = false, features = ["fips", "alloc", "ring-io", "ring-sig-verify"] }
 # Pin the policy/provider API so resolution cannot change its contract.
 rustls = { version = "=0.23.46", default-features = false, features = ["std", "tls12"] }
-# Pin descriptor availability and FIPS dependency compatibility for this module line.
-rcgen = { version = "=0.14.10", default-features = false, features = ["aws_lc_rs", "fips", "pem"] }
+# CSR encoding only: rcgen does no cryptography here, so it brings in no aws-lc-rs.
+rcgen = { version = "=0.15.0", default-features = false, features = ["pem"] }
 rustls-webpki = { version = "=0.103.16", default-features = false, features = ["std"] }
 pem = "4"
 zeroize = "1"

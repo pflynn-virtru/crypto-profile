@@ -118,20 +118,20 @@ fn kind(a: S) -> Result<Kind, CryptoError> {
     })
 }
 
-pub(crate) fn rcgen_alg(a: S) -> Result<&'static rcgen::SignatureAlgorithm, CryptoError> {
+pub(crate) fn rcgen_alg(a: S) -> Result<&'static rcgen::SigningKeyAlgorithm, CryptoError> {
     Ok(match a {
         S::MlDsa87 => return MlDsa::rcgen_alg(),
-        S::EcdsaP256Sha256 => &rcgen::PKCS_ECDSA_P256_SHA256,
-        S::EcdsaP384Sha384 => &rcgen::PKCS_ECDSA_P384_SHA384,
-        S::EcdsaP521Sha384 => &rcgen::PKCS_ECDSA_P521_SHA384,
-        S::EcdsaP521Sha512 => &rcgen::PKCS_ECDSA_P521_SHA512,
-        S::Ed25519 => &rcgen::PKCS_ED25519,
+        S::EcdsaP256Sha256 => &rcgen::ECDSA_P256_SHA256,
+        S::EcdsaP384Sha384 => &rcgen::ECDSA_P384_SHA384,
+        S::EcdsaP521Sha384 => &rcgen::ECDSA_P521_SHA384,
+        S::EcdsaP521Sha512 => &rcgen::ECDSA_P521_SHA512,
+        S::Ed25519 => &rcgen::ED25519,
         S::Rsa2048Sha384
         | S::Rsa3072Sha384
         | S::Rsa4096Sha384
         | S::Rsa2048Sha384Pss
         | S::Rsa3072Sha384Pss
-        | S::Rsa4096Sha384Pss => &rcgen::PKCS_RSA_SHA384,
+        | S::Rsa4096Sha384Pss => &rcgen::RSA_PKCS1_SHA384,
         _ => return Err(CryptoError::Unavailable(Algorithm::Signature(a))),
     })
 }
@@ -188,7 +188,7 @@ pub struct KeyPair {
     alg: S,
     key: Held,
     public: Vec<u8>,
-    descriptor: &'static rcgen::SignatureAlgorithm,
+    descriptor: &'static rcgen::SigningKeyAlgorithm,
 }
 
 impl fmt::Debug for KeyPair {
@@ -334,16 +334,20 @@ impl rcgen::PublicKeyData for KeyPair {
         &self.public
     }
 
-    fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
-        self.descriptor
+    fn key_algorithm(&self) -> &'static rcgen::PublicKeyAlgorithm {
+        self.descriptor.key_algorithm()
     }
 }
 
-// rcgen labels what it signs with `PublicKeyData::algorithm`, which has no RSA-PSS descriptor.
+// rcgen labels what it signs with `SigningKey::algorithm`, which has no RSA-PSS descriptor.
 impl rcgen::SigningKey for KeyPair {
     fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
         rcgen_signs(self.alg)?;
         KeyPair::sign(self, msg).map_err(|_| rcgen::Error::RingUnspecified)
+    }
+
+    fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
+        self.descriptor.signature_algorithm()
     }
 }
 
@@ -697,8 +701,13 @@ mod tests {
             let k = KeyPair::generate(&u(), a).unwrap();
             assert_eq!(rcgen::PublicKeyData::der_bytes(&k), k.public_key(), "{a}");
             assert_eq!(
-                rcgen::PublicKeyData::algorithm(&k),
-                rcgen_alg(a).unwrap(),
+                rcgen::PublicKeyData::key_algorithm(&k),
+                rcgen_alg(a).unwrap().key_algorithm(),
+                "{a}"
+            );
+            assert_eq!(
+                rcgen::SigningKey::algorithm(&k),
+                rcgen_alg(a).unwrap().signature_algorithm(),
                 "{a}"
             );
             if a.tls_scheme().is_none() {
@@ -707,7 +716,7 @@ mod tests {
                     Err(rcgen::Error::UnsupportedSignatureAlgorithm),
                     "{a}"
                 );
-                assert_eq!(rcgen_alg(a).unwrap(), &rcgen::PKCS_RSA_SHA384, "{a}");
+                assert_eq!(rcgen_alg(a).unwrap(), &rcgen::RSA_PKCS1_SHA384, "{a}");
                 continue;
             }
             let sig = rcgen::SigningKey::sign(&k, b"m").unwrap();
@@ -1596,21 +1605,27 @@ mod tests {
         }
     }
 
+    // The documents rcgen's key generation returned, now that rcgen does no cryptography here.
     #[test]
-    fn rcgens_generated_keys_load_through_the_tls_key_provider() {
-        let mut algorithms = vec![
-            &rcgen::PKCS_ECDSA_P256_SHA256,
-            &rcgen::PKCS_ECDSA_P384_SHA384,
-            &rcgen::PKCS_ECDSA_P521_SHA512,
-            &rcgen::PKCS_ED25519,
-        ];
-        algorithms.extend(MlDsa::rcgen_alg().ok());
-        for alg in algorithms {
-            let key = rcgen::KeyPair::generate_for(alg).unwrap();
-            assert!(
-                tls_loads(PrivateKeyDer::Pkcs8(key.serialize_der().into())),
-                "{alg:?}"
-            );
+    fn aws_lc_rs_generated_keys_load_through_the_tls_key_provider() {
+        use aws_lc_rs::signature as aws;
+        let rng = aws_lc_rs::rand::SystemRandom::new();
+        let mut keys = Vec::new();
+        for (name, alg) in [
+            ("P-256", &aws::ECDSA_P256_SHA256_ASN1_SIGNING),
+            ("P-384", &aws::ECDSA_P384_SHA384_ASN1_SIGNING),
+            ("P-521", &aws::ECDSA_P521_SHA512_ASN1_SIGNING),
+        ] {
+            let doc = aws::EcdsaKeyPair::generate_pkcs8(alg, &rng).unwrap();
+            keys.push((name, doc.as_ref().to_vec()));
+        }
+        let doc = aws::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
+        keys.push(("Ed25519", doc.as_ref().to_vec()));
+        if let Some(doc) = MlDsa::fixture87() {
+            keys.push(("ML-DSA-87", doc.to_vec()));
+        }
+        for (name, der) in keys {
+            assert!(tls_loads(PrivateKeyDer::Pkcs8(der.into())), "{name}");
         }
     }
 

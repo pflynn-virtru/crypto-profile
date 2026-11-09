@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - CI runs `ci/quality.sh mutants-diff` on both backends for every pull request, so the pre-PR mutation gate no longer depends on the contributor's machine.
 
+### Changed
+
+- Both backends build rcgen 0.15 with `pem` only, and aws-lc-rs without its default features (rustls/rcgen#459, not yet published; taken through `[patch.crates-io]`). rcgen only encodes certificate requests, so it needs none of its crypto features: the shipped graph no longer contains the non-FIPS `aws-lc-sys`, and the 3.x backend no longer needs an older rcgen than 4.x. Certificate requests for every algorithm, ECDSA P-521 and ML-DSA-87 included, are unchanged.
+- **Breaking for users of the `test-support` re-export:** `rcgen` moves to 0.15, whose descriptor names and `PublicKeyData` and `SigningKey` traits differ (for example `rcgen::PKCS_ML_DSA_87` is `rcgen::ML_DSA_87`).
+
 ## [0.10.0] - 2026-11-05
 
 ### Added

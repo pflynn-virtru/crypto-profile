@@ -253,21 +253,21 @@ macro_rules! __conformance_peer_certificate_tests {
         fn peer_certificate_other_ml_parameter_sets() {
             use rustls::client::danger::ServerCertVerifier;
             use rustls::server::danger::ClientCertVerifier;
-            let algorithms: Vec<(&'static rcgen::SignatureAlgorithm, ML)> = $crate::__conformance_peer_ml_algorithms!($b);
+            let algorithms: Vec<ML> = $crate::__conformance_peer_ml_algorithms!($b);
             assert_eq!(algorithms.len(), if MODULE.line == ModuleLine::AwsLcFips3 { 0 } else { 2 });
             if MODULE.line == ModuleLine::AwsLcFips3 {
                 assert_eq!(signature::KeyPair::generate(&admit(P::Unrestricted, Options::default()), S::MlDsa87).err(),
                     Some(CryptoError::Unavailable(Algorithm::Signature(S::MlDsa87))));
             }
-            for (algorithm, parameter) in algorithms {
-                let generated = rcgen::KeyPair::generate_for(algorithm);
-                let key = generated.unwrap();
+            for parameter in algorithms {
+                let generated = test_support::ml_dsa_test_key(parameter).unwrap();
+                let key: &dyn rcgen::SigningKey = &*generated;
                 let root = signature::KeyPair::generate(&admit(P::Unrestricted, Options::default()), S::EcdsaP384Sha384).unwrap();
-                let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
-                params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+                let mut params = test_support::certificate_params(Vec::<String>::new()).unwrap();
+                params.basic_constraints = Some(rcgen::BasicConstraints::Ca(rcgen::PathLenConstraint::Unconstrained));
                 let ca = params.self_signed(&root).unwrap();
                 let issuer = rcgen::Issuer::new(params, &root);
-                let leaf = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap()
+                let leaf = test_support::certificate_params(vec!["localhost".into()]).unwrap()
                     .signed_by(&key, &issuer).unwrap();
                 let mut roots = rustls::RootCertStore::empty();
                 roots.add(ca.der().clone()).unwrap();
@@ -287,11 +287,11 @@ macro_rules! __conformance_peer_certificate_tests {
                         }
                     }
                 }
-                let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
-                params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+                let mut params = test_support::certificate_params(Vec::<String>::new()).unwrap();
+                params.basic_constraints = Some(rcgen::BasicConstraints::Ca(rcgen::PathLenConstraint::Unconstrained));
                 let ca = params.self_signed(&key).unwrap();
                 let issuer = rcgen::Issuer::new(params, &key);
-                let leaf = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap()
+                let leaf = test_support::certificate_params(vec!["localhost".into()]).unwrap()
                     .signed_by(&root, &issuer).unwrap();
                 let mut roots = rustls::RootCertStore::empty();
                 roots.add(ca.der().clone()).unwrap();
@@ -455,10 +455,7 @@ macro_rules! __conformance_peer_certificate_tests {
 #[macro_export]
 macro_rules! __conformance_peer_ml_algorithms {
     (crypto_profile_awslc4) => {
-        vec![
-            (&rcgen::PKCS_ML_DSA_44, ML::MlDsa44),
-            (&rcgen::PKCS_ML_DSA_65, ML::MlDsa65),
-        ]
+        vec![ML::MlDsa44, ML::MlDsa65]
     };
     (crypto_profile_awslc3) => {
         Vec::new()

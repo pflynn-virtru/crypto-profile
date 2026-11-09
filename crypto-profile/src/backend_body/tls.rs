@@ -1380,18 +1380,18 @@ mod tests {
     use std::sync::Arc;
 
     fn self_signed(
-        sans: Vec<rcgen::SanType>,
+        sans: Vec<rcgen::GeneralName>,
         extensions: Vec<rcgen::CustomExtension>,
     ) -> CertificateDer<'static> {
         let key = crate::test_support::key_pair(S::EcdsaP384Sha384).unwrap();
-        let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
+        let mut params = crate::test_support::certificate_params(Vec::<String>::new()).unwrap();
         params.subject_alt_names = sans;
         params.custom_extensions = extensions;
         params.self_signed(&key).unwrap().der().clone()
     }
 
-    fn uri(s: &str) -> rcgen::SanType {
-        rcgen::SanType::URI(s.try_into().unwrap())
+    fn uri(s: &str) -> rcgen::GeneralName {
+        rcgen::GeneralName::URI(s.try_into().unwrap())
     }
 
     fn uri_names_of(der: &CertificateDer<'_>) -> Result<Vec<String>, rustls::Error> {
@@ -1411,7 +1411,7 @@ mod tests {
         let der = self_signed(
             vec![
                 uri("spiffe://example.org/a"),
-                rcgen::SanType::DnsName("a.example".try_into().unwrap()),
+                rcgen::GeneralName::DnsName("a.example".try_into().unwrap()),
                 uri("spiffe://example.org/b"),
             ],
             vec![],
@@ -1431,8 +1431,9 @@ mod tests {
         general_names.extend(names);
         let der = self_signed(
             vec![],
-            vec![rcgen::CustomExtension::from_oid_content(
+            vec![rcgen::CustomExtension::new(
                 &[2, 5, 29, 17],
+                rcgen::Criticality::NonCritical,
                 general_names,
             )],
         );
@@ -1456,8 +1457,9 @@ mod tests {
         general_names.extend(names);
         let der = self_signed(
             vec![],
-            vec![rcgen::CustomExtension::from_oid_content(
+            vec![rcgen::CustomExtension::new(
                 &[2, 5, 29, 17],
+                rcgen::Criticality::NonCritical,
                 general_names,
             )],
         );
@@ -1744,11 +1746,14 @@ mod tests {
         fn der_bytes(&self) -> &[u8] {
             rcgen::PublicKeyData::der_bytes(self.0)
         }
-        fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
-            &rcgen::PKCS_RSA_SHA256
+        fn key_algorithm(&self) -> &'static rcgen::PublicKeyAlgorithm {
+            &rcgen::key_alg::RSA
         }
     }
     impl rcgen::SigningKey for Sha256<'_> {
+        fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
+            &rcgen::sig_alg::RSA_PKCS1_SHA256
+        }
         fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
             let key = aws_lc_rs::signature::RsaKeyPair::from_pkcs8(&self.0.to_pkcs8_der().unwrap())
                 .unwrap();
@@ -1769,7 +1774,7 @@ mod tests {
         use crate::{
             CertificateSignature as CS, HashAlgorithm as H, PeerCertificateViolation as V, Profile,
         };
-        use rcgen::{CertificateParams, Issuer};
+        use rcgen::Issuer;
         use rustls::server::danger::ClientCertVerifier;
         for (algorithm, sha256, violation) in [
             (
@@ -1784,8 +1789,10 @@ mod tests {
             ),
         ] {
             let root_key = crate::test_support::key_pair(S::EcdsaP384Sha384).unwrap();
-            let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
-            params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+            let mut params = crate::test_support::certificate_params(Vec::<String>::new()).unwrap();
+            params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+                rcgen::PathLenConstraint::Unconstrained,
+            ));
             let root = params.self_signed(&root_key).unwrap();
             let root_issuer = Issuer::new(params.clone(), &root_key);
             let intermediate_key = crate::test_support::key_pair(algorithm).unwrap();
@@ -1798,7 +1805,7 @@ mod tests {
             };
             let issuer = Issuer::new(params, signing_key);
             let leaf_key = crate::test_support::certificate_key(S::EcdsaP384Sha384).unwrap();
-            let leaf = CertificateParams::new(vec!["localhost".into()])
+            let leaf = crate::test_support::certificate_params(vec!["localhost".into()])
                 .unwrap()
                 .signed_by(leaf_key.key_pair(), &issuer)
                 .unwrap();
@@ -1860,25 +1867,30 @@ mod tests {
         use crate::{
             CertificateSignature, HashAlgorithm, PeerCertificateViolation, PeerCurve, Profile,
         };
-        use rcgen::{CertificateParams, DistinguishedName, DnType, Issuer};
+        use rcgen::{DistinguishedName, DnType, Issuer};
         use rustls::server::danger::ClientCertVerifier;
         let ca_params = |name: &str| {
-            let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
-            params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+            let mut params = crate::test_support::certificate_params(Vec::<String>::new()).unwrap();
+            params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+                rcgen::PathLenConstraint::Unconstrained,
+            ));
             params.distinguished_name = DistinguishedName::new();
             params.distinguished_name.push(DnType::CommonName, name);
             params
         };
         let good_key = crate::test_support::key_pair(S::EcdsaP384Sha384).unwrap();
         let bad_key = crate::test_support::key_pair(S::EcdsaP256Sha256).unwrap();
-        let good_params = ca_params("good root");
-        let bad_params = ca_params("bad root");
+        let mut good_params = ca_params("good root");
+        good_params.key_identifier_method = crate::test_support::key_id(&good_key);
+        let mut bad_params = ca_params("bad root");
+        bad_params.key_identifier_method = crate::test_support::key_id(&bad_key);
         let good_root = good_params.self_signed(&good_key).unwrap();
         let bad_root = bad_params.self_signed(&bad_key).unwrap();
         let good_issuer = Issuer::new(good_params, &good_key);
         let bad_issuer = Issuer::new(bad_params, &bad_key);
         let intermediate_key = crate::test_support::key_pair(S::EcdsaP384Sha384).unwrap();
-        let intermediate_params = ca_params("shared intermediate");
+        let mut intermediate_params = ca_params("shared intermediate");
+        intermediate_params.key_identifier_method = crate::test_support::key_id(&intermediate_key);
         let good = intermediate_params
             .signed_by(&intermediate_key, &good_issuer)
             .unwrap();
@@ -1886,23 +1898,25 @@ mod tests {
             .signed_by(&intermediate_key, &bad_issuer)
             .unwrap();
         let issuer = Issuer::new(intermediate_params, &intermediate_key);
-        let crls: Vec<_> = [&good_issuer, &bad_issuer, &issuer]
-            .into_iter()
-            .map(|issuer| {
-                rcgen::CertificateRevocationListParams {
-                    this_update: rcgen::date_time_ymd(2020, 1, 1),
-                    next_update: rcgen::date_time_ymd(2040, 1, 1),
-                    crl_number: rcgen::SerialNumber::from(1),
-                    issuing_distribution_point: None,
-                    revoked_certs: vec![],
-                    key_identifier_method: rcgen::KeyIdMethod::Sha256,
-                }
-                .signed_by(issuer)
-                .unwrap()
-                .der()
-                .clone()
-            })
-            .collect();
+        let crls: Vec<_> = [
+            (&good_issuer, &good_key),
+            (&bad_issuer, &bad_key),
+            (&issuer, &intermediate_key),
+        ]
+        .into_iter()
+        .map(|(issuer, key)| {
+            rcgen::CertificateRevocationListParams::new(
+                rcgen::date_time_ymd(2020, 1, 1),
+                rcgen::date_time_ymd(2040, 1, 1),
+                rcgen::SerialNumber::from(1),
+                crate::test_support::key_id(key),
+            )
+            .signed_by(issuer)
+            .unwrap()
+            .der()
+            .clone()
+        })
+        .collect();
         let parsed_crls: Vec<_> = crls
             .iter()
             .map(|crl| {
@@ -1917,7 +1931,7 @@ mod tests {
             .with_expiration_policy(webpki::ExpirationPolicy::Enforce)
             .build();
         let leaf_key = crate::test_support::certificate_key(S::EcdsaP384Sha384).unwrap();
-        let leaf = CertificateParams::new(vec!["localhost".into()])
+        let leaf = crate::test_support::certificate_params(vec!["localhost".into()])
             .unwrap()
             .signed_by(leaf_key.key_pair(), &issuer)
             .unwrap();
@@ -2028,17 +2042,20 @@ mod tests {
 
     #[test]
     fn peer_certificates_sha256_crls_stay_baseline_with_strict_sha384_paths() {
-        use rcgen::{CertificateParams, CertificateRevocationListParams, SerialNumber};
+        use rcgen::{CertificateRevocationListParams, SerialNumber};
         use rustls::server::danger::ClientCertVerifier;
         let key = crate::test_support::key_pair(S::Rsa3072Sha384).unwrap();
-        let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
-        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let mut params = crate::test_support::certificate_params(Vec::<String>::new()).unwrap();
+        params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+            rcgen::PathLenConstraint::Unconstrained,
+        ));
+        params.key_identifier_method = crate::test_support::key_id(&key);
         let root = params.self_signed(&Sha256(&key)).unwrap();
         let issuer = rcgen::Issuer::new(params.clone(), &key);
         let sha256 = Sha256(&key);
         let crl_issuer = rcgen::Issuer::new(params, &sha256);
         let leaf_key = crate::test_support::certificate_key(S::EcdsaP384Sha384).unwrap();
-        let mut params = CertificateParams::new(vec!["localhost".into()]).unwrap();
+        let mut params = crate::test_support::certificate_params(vec!["localhost".into()]).unwrap();
         params.serial_number = Some(SerialNumber::from(42));
         let leaf = params.signed_by(leaf_key.key_pair(), &issuer).unwrap();
         let mut roots = rustls::RootCertStore::empty();
@@ -2049,27 +2066,19 @@ mod tests {
             ..one13(K::Secp384r1)
         };
         for revoked in [false, true] {
-            let crl = CertificateRevocationListParams {
-                this_update: rcgen::date_time_ymd(2020, 1, 1),
-                next_update: rcgen::date_time_ymd(2040, 1, 1),
-                crl_number: SerialNumber::from(1),
-                issuing_distribution_point: None,
-                revoked_certs: if revoked {
-                    vec![rcgen::RevokedCertParams {
-                        serial_number: SerialNumber::from(42),
-                        revocation_time: rcgen::date_time_ymd(2020, 1, 1),
-                        reason_code: None,
-                        invalidity_date: None,
-                    }]
-                } else {
-                    vec![]
-                },
-                key_identifier_method: rcgen::KeyIdMethod::Sha256,
+            let mut crl = CertificateRevocationListParams::new(
+                rcgen::date_time_ymd(2020, 1, 1),
+                rcgen::date_time_ymd(2040, 1, 1),
+                SerialNumber::from(1),
+                crate::test_support::key_id(&key),
+            );
+            if revoked {
+                crl.revoked_certs = vec![rcgen::RevokedCertParams::new(
+                    SerialNumber::from(42),
+                    rcgen::date_time_ymd(2020, 1, 1),
+                )];
             }
-            .signed_by(&crl_issuer)
-            .unwrap()
-            .der()
-            .clone();
+            let crl = crl.signed_by(&crl_issuer).unwrap().der().clone();
             let server = server_cert_verifier_builder(roots.clone(), &strict)
                 .unwrap()
                 .with_crls([crl.clone()])
@@ -2179,16 +2188,20 @@ mod tests {
 
     #[test]
     fn peer_certificates_revocation_modes_survive_owned_completion() {
-        use rcgen::{CertificateParams, CertificateRevocationListParams, SerialNumber};
+        use rcgen::{CertificateRevocationListParams, SerialNumber};
         use rustls::pki_types::{ServerName, UnixTime};
         use rustls::server::danger::ClientCertVerifier;
         let ca_key = crate::test_support::key_pair(S::EcdsaP384Sha384).unwrap();
-        let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
-        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let mut params = crate::test_support::certificate_params(Vec::<String>::new()).unwrap();
+        params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+            rcgen::PathLenConstraint::Unconstrained,
+        ));
+        params.key_identifier_method = crate::test_support::key_id(&ca_key);
         let ca = params.self_signed(&ca_key).unwrap();
         let issuer = rcgen::Issuer::new(params, &ca_key);
         let key = crate::test_support::certificate_key(S::EcdsaP384Sha384).unwrap();
-        let mut leaf_params = CertificateParams::new(vec!["localhost".into()]).unwrap();
+        let mut leaf_params =
+            crate::test_support::certificate_params(vec!["localhost".into()]).unwrap();
         leaf_params.serial_number = Some(SerialNumber::from(42));
         let leaf = leaf_params.signed_by(key.key_pair(), &issuer).unwrap();
         let mut roots = rustls::RootCertStore::empty();
@@ -2199,27 +2212,19 @@ mod tests {
             ..one13(K::Secp384r1)
         };
         let crl = |revoked: bool| {
-            CertificateRevocationListParams {
-                this_update: rcgen::date_time_ymd(2000, 1, 1),
-                next_update: rcgen::date_time_ymd(2001, 1, 1),
-                crl_number: SerialNumber::from(1),
-                issuing_distribution_point: None,
-                revoked_certs: if revoked {
-                    vec![rcgen::RevokedCertParams {
-                        serial_number: SerialNumber::from(42),
-                        revocation_time: rcgen::date_time_ymd(2000, 1, 1),
-                        reason_code: None,
-                        invalidity_date: None,
-                    }]
-                } else {
-                    vec![]
-                },
-                key_identifier_method: rcgen::KeyIdMethod::Sha256,
+            let mut params = CertificateRevocationListParams::new(
+                rcgen::date_time_ymd(2000, 1, 1),
+                rcgen::date_time_ymd(2001, 1, 1),
+                SerialNumber::from(1),
+                crate::test_support::key_id(&ca_key),
+            );
+            if revoked {
+                params.revoked_certs = vec![rcgen::RevokedCertParams::new(
+                    SerialNumber::from(42),
+                    rcgen::date_time_ymd(2000, 1, 1),
+                )];
             }
-            .signed_by(&issuer)
-            .unwrap()
-            .der()
-            .clone()
+            params.signed_by(&issuer).unwrap().der().clone()
         };
         let name = ServerName::try_from("localhost").unwrap();
         for revoked in [false, true] {
@@ -2838,7 +2843,7 @@ mod tests {
     #[test]
     fn every_builder_route_refuses_a_key_with_a_byte_after_it() {
         let key = crate::test_support::key_pair(S::EcdsaP384Sha384).unwrap();
-        let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+        let cert = crate::test_support::certificate_params(vec!["localhost".to_string()])
             .unwrap()
             .self_signed(&key)
             .unwrap();
@@ -2870,7 +2875,7 @@ mod tests {
     #[test]
     fn a_server_config_with_x25519_is_not_fips() {
         let key = crate::test_support::key_pair(S::EcdsaP384Sha384).unwrap();
-        let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+        let cert = crate::test_support::certificate_params(vec!["localhost".to_string()])
             .unwrap()
             .self_signed(&key)
             .unwrap();
@@ -2896,8 +2901,10 @@ mod tests {
     #[test]
     fn verifiers_carry_the_policys_schemes_in_the_canonical_order() {
         let key = crate::test_support::key_pair(S::EcdsaP384Sha384).unwrap();
-        let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
-        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let mut params = crate::test_support::certificate_params(Vec::<String>::new()).unwrap();
+        params.basic_constraints = Some(rcgen::BasicConstraints::Ca(
+            rcgen::PathLenConstraint::Unconstrained,
+        ));
         let mut roots = rustls::RootCertStore::empty();
         roots
             .add(params.self_signed(&key).unwrap().der().clone())

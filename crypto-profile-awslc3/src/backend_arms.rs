@@ -23,8 +23,12 @@ impl MlDsa {
     pub(crate) fn verifier() -> Result<&'static dyn sig::VerificationAlgorithm, CryptoError> {
         unavailable()
     }
-    pub(crate) fn rcgen_alg() -> Result<&'static rcgen::SignatureAlgorithm, CryptoError> {
+    pub(crate) fn rcgen_alg() -> Result<&'static rcgen::SigningKeyAlgorithm, CryptoError> {
         unavailable()
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn test_key(_: crate::MlDsaParameterSet) -> Option<Box<dyn rcgen::SigningKey>> {
+        None
     }
     #[cfg(test)]
     pub(crate) fn fixture44() -> Option<Zeroizing<Vec<u8>>> {
@@ -32,6 +36,11 @@ impl MlDsa {
     }
     #[cfg(test)]
     pub(crate) fn fixture65() -> Option<Zeroizing<Vec<u8>>> {
+        None
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixture87() -> Option<Zeroizing<Vec<u8>>> {
         None
     }
 }
@@ -87,6 +96,14 @@ mod tests {
         );
         assert!(MlDsa::fixture44().is_none());
         assert!(MlDsa::fixture65().is_none());
+        assert!(MlDsa::fixture87().is_none());
+        for parameter in [
+            crate::MlDsaParameterSet::MlDsa44,
+            crate::MlDsaParameterSet::MlDsa65,
+            crate::MlDsaParameterSet::MlDsa87,
+        ] {
+            assert!(MlDsa::test_key(parameter).is_none());
+        }
         let key = MlDsaKey(());
         assert_eq!(key.public_key(), Err(unavailable));
         assert_eq!(key.sign(b"message"), Err(unavailable));
