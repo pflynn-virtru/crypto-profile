@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `crypto-profile-awslc4` builds in a project without a lockfile (#54). aws-lc-rs requires `aws-lc-fips-sys` by caret, so a fresh resolution took 0.14.4, which the backend's build script refuses. Each backend now pins `aws-lc-fips-sys` exactly: 0.14.2 on 4.x, and 0.13.17 on 3.x, which would have failed the same way once 0.13.18 was published. Until a release carries this, run `cargo update -p aws-lc-fips-sys --precise 0.14.2`.
+
+### Changed
+
+- Every shipped dependency is pinned exactly (decision 0017, amended): `pem` 4.0.0 and `zeroize` 1.9.1 in both backends. A consumer whose other dependencies need a newer release of either cannot resolve until a crypto-profile release moves the pin. Test-only dependencies stay unpinned.
+
 ## [0.10.0] - 2026-11-05
 
 ### Added
