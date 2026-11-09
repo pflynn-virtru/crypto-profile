@@ -18,5 +18,6 @@ workspace = true
 conformance = ["dep:serde_json", "dep:hex"]
 
 [dependencies]
-serde_json = { version = "1", optional = true }
-hex = { version = "0.4", optional = true }
+# Pinned with the backends' shipped graph (decision 0017).
+serde_json = { version = "=1.0.154", optional = true }
+hex = { version = "=0.4.3", optional = true }
