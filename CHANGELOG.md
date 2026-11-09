@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Every normal dependency is pinned exactly (decision 0017, amended): `pem` 4.0.0 and `zeroize` 1.9.1 in both backends, and `serde_json` 1.0.154 and `hex` 0.4.3 in core. A consumer whose other dependencies need a newer release of one of these cannot resolve until a crypto-profile release moves the pin.
+- Every shipped dependency is pinned exactly (decision 0017, amended): `pem` 4.0.0 and `zeroize` 1.9.1 in both backends. A consumer whose other dependencies need a newer release of either cannot resolve until a crypto-profile release moves the pin. Test-only dependencies stay unpinned.
 
 ## [0.10.0] - 2026-11-05
 
