@@ -273,6 +273,7 @@ TLS 1.2 is admitted to the end of 2031 (TR-02102-2 Table 2). The profile moves w
 
 ## 5. What a profile does not restrict
 
+- **Code that does not call the crate.** A dependency with its own cryptography is outside every profile. `enforcement::deny_toml(profile)` refuses such dependencies at build time, per crate, from the profile's own lists ([usage §20](usage.md#20-enforcing-a-profile-at-build-time), [decision 0018](decisions/0018-build-time-enforcement.md)).
 - **Peer certificate keys and chain signatures, by default.** With `Options::peer_certificates_match_profile` off, the baseline verifier accepts its full certificate signature list. Turn the option on to enforce the selected profile’s leaf and chain rules (section 9). Handshake signature schemes are separate from certificate signatures.
 - **The peer leaf’s key size and curve, by default.** The option checks these when enabled (section 4, item 1).
 - **A signing key built outside the profile's provider.** A key loaded through `tls::load_private_key`, `Resolved::certified_key` or the builder's own key loading signs only with the policy's schemes. A `rustls::sign::SigningKey` built any other way signs with whatever scheme rustls picks from the peer's offer and the key's type.

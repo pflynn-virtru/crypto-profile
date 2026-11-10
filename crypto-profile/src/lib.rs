@@ -17,6 +17,7 @@ pub use algorithm::{
 pub use error::{CryptoError, CsrError, Family, PeerVerifierIdentity, TlsError};
 
 pub mod capability;
+pub mod enforcement;
 pub use capability::{
     Approval, Capability, CertStatus, Certificate, Linkage, Module, ModuleLine, capability,
     certificate, ensure_available,

@@ -102,6 +102,19 @@ jobs:
       - working-directory: crypto-profile-awslc3
         run: cargo deny --config ../deny.toml --locked check
 
+  enforcement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-deny@0.20.2 # The checker the generated configurations are written for.
+      - run: ci/enforcement.sh
+
   shipped-graph:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

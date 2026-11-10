@@ -45,6 +45,7 @@ ci/build-script-tests.sh
 ci/release-lockstep.sh
 ci/package.sh "$(mktemp -d)"
 ci/macro-mutation-smoke.sh
+ci/enforcement.sh
 cargo deny --locked check
 (cd crypto-profile-awslc3 && cargo deny --config ../deny.toml --locked check)
 cargo +1.99.1 check --workspace --all-features --locked
