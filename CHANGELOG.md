@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- CI runs `ci/quality.sh mutants-diff` on both backends for every pull request, so the pre-PR mutation gate no longer depends on the contributor's machine.
+
 ## [0.10.0] - 2026-11-05
 
 ### Added
