@@ -172,6 +172,7 @@ Section 9 lists what a policy or profile does not restrict. A change that widens
 - **Comments only where the code cannot be read without one:** one to three lines giving the mechanism or the invariant. Reasoning and history go in the commit message or a decision record.
 - **No `unsafe`.** Every crate sets `unsafe_code = "forbid"` through the workspace lints.
 - **No `aws_lc_rs` re-export.** The backend re-exports `rustls`, and `rcgen` only under `test-support`.
+- **The agent skill follows the crate.** A change to the public API, the build prerequisites, the pins or the enforcement files updates `crypto-profile/plugin/skills/using-crypto-profile/SKILL.md` in the same pull request.
 - **Typed refusals.** Only `Approved` is approved: `AlgorithmTested`, `NotApproved` and `Unverified` never are. Direct operations on an algorithm a backend lacks are refused with `CryptoError::Unavailable`. **Amended 2026-10-29:** named profile resolution intersects the published set with line availability after Options, reports every line exclusion in `excluded`, and refuses any empty family with `EmptyProfile`. No silent exclusions and no approval filtering; see [decision 0006](docs/decisions/0006-per-line-profile-resolution.md).
 
 ## 9. Developer Certificate of Origin

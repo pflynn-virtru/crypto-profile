@@ -1,0 +1,11 @@
+{
+  "name": "crypto-profile",
+  "description": "Guidance for coding agents adding crypto-profile to a Rust project: backend and profile setup, TLS through the profile, and the build-time checks and CI that keep the dependency tree inside it.",
+  "author": {
+    "name": "crypto-profile contributors"
+  },
+  "homepage": "https://github.com/crypto-profile/crypto-profile",
+  "repository": "https://github.com/crypto-profile/crypto-profile",
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["rust", "fips", "cnsa", "rustls", "aws-lc", "cargo-deny"]
+}

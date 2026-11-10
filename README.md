@@ -75,6 +75,7 @@ The option "post-quantum key exchange required" (`pq_key_exchange_required`, set
 - [`docs/profiles.md`](docs/profiles.md): the profiles, their governing texts and contents, the post-quantum option, module approval, named residuals and the after-2030 table.
 - [`docs/sources.md`](docs/sources.md): every document the profiles, citations and capability cells depend on, with edition, issuer link and SHA-256.
 - [`docs/decisions/`](docs/decisions/): the decision records.
+- [`crypto-profile/plugin/`](crypto-profile/plugin/): an Agent Skill, `using-crypto-profile`, for coding agents that add the crate to a project, or add dependencies, cargo-deny, clippy or CI to one. In Claude Code: `/plugin install crypto-profile --marketplace crypto-profile/crypto-profile`. Other agents read [`skills/using-crypto-profile/SKILL.md`](crypto-profile/plugin/skills/using-crypto-profile/SKILL.md), which also ships in the `crypto-profile` package, matching the version in your lockfile.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md) and [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Licensing
