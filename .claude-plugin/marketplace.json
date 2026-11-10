@@ -1,0 +1,14 @@
+{
+  "name": "crypto-profile",
+  "owner": {
+    "name": "crypto-profile contributors"
+  },
+  "description": "The crypto-profile plugin, from the crate's own repository.",
+  "plugins": [
+    {
+      "name": "crypto-profile",
+      "source": "./crypto-profile/plugin",
+      "description": "Guidance for coding agents adding crypto-profile to a Rust project."
+    }
+  ]
+}
