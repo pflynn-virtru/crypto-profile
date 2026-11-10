@@ -174,4 +174,4 @@ The 3.x backend pins aws-lc-rs 1.17.4 and rcgen 0.14.9; its lockfile selects aws
 |---|---|---|
 | aws-lc-rs | 1.17.4 | <https://crates.io/crates/aws-lc-rs/1.17.4> |
 | aws-lc-fips-sys | 0.13.17 | <https://crates.io/crates/aws-lc-fips-sys/0.13.17> |
-| rcgen | 0.14.9 | <https://crates.io/crates/rcgen/0.14.9> |
+| rcgen | 0.15.0, unreleased: rustls/rcgen#459 at `7b1cd91` | <https://github.com/jgreeer/rcgen/tree/7b1cd91d96a3efc7326ecba868041fd7afe33d62> |

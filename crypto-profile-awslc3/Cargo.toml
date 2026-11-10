@@ -30,11 +30,11 @@ test-support = []
 [dependencies]
 crypto-profile = { path = "../crypto-profile", version = "=0.10.0" }
 # Prevent resolution onto the 4.x module; Cargo.lock pins the 3.x sys source to 0.13.17.
-aws-lc-rs = { version = "=1.17.4", features = ["fips", "ring-io"] }
+aws-lc-rs = { version = "=1.17.4", default-features = false, features = ["fips", "alloc", "ring-io", "ring-sig-verify"] }
 # Pin the policy/provider API so resolution cannot change its contract.
 rustls = { version = "=0.23.46", default-features = false, features = ["std", "tls12"] }
-# Later rcgen requires aws-lc-rs 1.18, crossing the selected FIPS module line.
-rcgen = { version = "=0.14.9", default-features = false, features = ["aws_lc_rs", "fips", "pem"] }
+# CSR encoding only: rcgen does no cryptography here, so it brings in no aws-lc-rs.
+rcgen = { version = "=0.15.0", default-features = false, features = ["pem"] }
 rustls-webpki = { version = "=0.103.16", default-features = false, features = ["std"] }
 pem = "4"
 zeroize = "1"
@@ -55,3 +55,8 @@ required-features = ["test-support"]
 [[test]]
 name = "openssl_interop"
 required-features = ["test-support"]
+
+# rustls/rcgen#459 (branch jgreeer/rcgen:add-public-key-algorithm), pinned to its head commit.
+# Remove when rcgen 0.15.0 is published.
+[patch.crates-io]
+rcgen = { git = "https://github.com/jgreeer/rcgen", rev = "7b1cd91d96a3efc7326ecba868041fd7afe33d62" }

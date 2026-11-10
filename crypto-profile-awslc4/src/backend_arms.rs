@@ -29,8 +29,41 @@ impl MlDsa {
         Ok(&sig::ML_DSA_87)
     }
 
-    pub(crate) fn rcgen_alg() -> Result<&'static rcgen::SignatureAlgorithm, CryptoError> {
-        Ok(&rcgen::PKCS_ML_DSA_87)
+    pub(crate) fn rcgen_alg() -> Result<&'static rcgen::SigningKeyAlgorithm, CryptoError> {
+        Ok(&rcgen::ML_DSA_87)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn test_key(
+        parameter: crate::MlDsaParameterSet,
+    ) -> Option<Box<dyn rcgen::SigningKey>> {
+        use crate::MlDsaParameterSet as P;
+        let (signing, key_algorithm, algorithm) = match parameter {
+            P::MlDsa44 => (
+                &sig::ML_DSA_44_SIGNING,
+                &rcgen::key_alg::ML_DSA_44,
+                &rcgen::sig_alg::ML_DSA_44,
+            ),
+            P::MlDsa65 => (
+                &sig::ML_DSA_65_SIGNING,
+                &rcgen::key_alg::ML_DSA_65,
+                &rcgen::sig_alg::ML_DSA_65,
+            ),
+            P::MlDsa87 => (
+                &sig::ML_DSA_87_SIGNING,
+                &rcgen::key_alg::ML_DSA_87,
+                &rcgen::sig_alg::ML_DSA_87,
+            ),
+        };
+        let key = sig::PqdsaKeyPair::generate(signing).ok()?;
+        let public = key.public_key().as_ref().to_vec();
+        Some(Box::new(TestMlDsa {
+            key,
+            signature_len: signing.signature_len(),
+            public,
+            key_algorithm,
+            algorithm,
+        }))
     }
 
     #[cfg(test)]
@@ -49,6 +82,51 @@ impl MlDsa {
             .to_pkcs8v1()
             .ok()?;
         Some(Zeroizing::new(doc.as_ref().to_vec()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixture87() -> Option<Zeroizing<Vec<u8>>> {
+        let doc = sig::PqdsaKeyPair::generate(&sig::ML_DSA_87_SIGNING)
+            .ok()?
+            .to_pkcs8v1()
+            .ok()?;
+        Some(Zeroizing::new(doc.as_ref().to_vec()))
+    }
+}
+
+/// An ML-DSA key of any parameter set, signing certificates through aws-lc-rs directly.
+#[cfg(any(test, feature = "test-support"))]
+struct TestMlDsa {
+    key: sig::PqdsaKeyPair,
+    signature_len: usize,
+    public: Vec<u8>,
+    key_algorithm: &'static rcgen::PublicKeyAlgorithm,
+    algorithm: &'static rcgen::SignatureAlgorithm,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl rcgen::PublicKeyData for TestMlDsa {
+    fn der_bytes(&self) -> &[u8] {
+        &self.public
+    }
+    fn key_algorithm(&self) -> &'static rcgen::PublicKeyAlgorithm {
+        self.key_algorithm
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl rcgen::SigningKey for TestMlDsa {
+    fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
+        let mut out = vec![0u8; self.signature_len];
+        let n = self
+            .key
+            .sign(msg, &mut out)
+            .map_err(|_| rcgen::Error::RemoteKeyError)?;
+        out.truncate(n);
+        Ok(out)
+    }
+    fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
+        self.algorithm
     }
 }
 
@@ -131,7 +209,7 @@ mod tests {
                 })
             );
         }
-        assert_eq!(MlDsa::rcgen_alg().unwrap(), &rcgen::PKCS_ML_DSA_87);
+        assert_eq!(MlDsa::rcgen_alg().unwrap(), &rcgen::ML_DSA_87);
     }
 
     fn tlv(tag: u8, value: &[u8]) -> Vec<u8> {

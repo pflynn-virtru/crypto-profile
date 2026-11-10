@@ -10,7 +10,7 @@ Three facts shape the answer:
 
 1. **Cargo cannot move an exact requirement.** `cargo update` keeps a dependency at `=x.y.z`, and a second requirement on the same crate, in the same semver-compatible range, that excludes the pinned version fails to resolve. So a fix released by one of the four crates does not reach a consumer through their own lockfile.
 2. **The module crate is not pinned.** aws-lc-rs requires `aws-lc-fips-sys` with a caret requirement (`aws-lc-rs-1.19.0/Cargo.toml:106-107`, `0.14.2`; `aws-lc-rs-1.17.4/Cargo.toml:106-107`, `0.13.17`). The aws-lc-rs pin fixes the `aws-lc-fips-sys` series, and with it the module line, but a consumer's own resolution picks the release within that series. Only this repository's lockfiles fix it, and a library's lockfile does not reach its consumers. A later series may or may not stay on the module line; the pin move that takes it says which.
-3. **The 3.x line has an upstream ceiling.** aws-lc-rs 1.18 and later require `aws-lc-fips-sys` 0.14, the 4.x line (`aws-lc-rs-1.18.0/Cargo.toml:106-107`), and rcgen 0.14.10 requires aws-lc-rs 1.18 (`rcgen-0.14.10/Cargo.toml:112-113`). A fix released only above that ceiling cannot reach the 3.x backend without leaving its module line.
+3. **The 3.x line has an upstream ceiling.** aws-lc-rs 1.18 and later require `aws-lc-fips-sys` 0.14, the 4.x line (`aws-lc-rs-1.18.0/Cargo.toml:106-107`), and rcgen 0.14.10 requires aws-lc-rs 1.18 (`rcgen-0.14.10/Cargo.toml:112-113`). A fix released only above that ceiling cannot reach the 3.x backend without leaving its module line. *(Amended 2026-11-09: rcgen 0.15 without its crypto features depends on no aws-lc-rs (rustls/rcgen#459), so the rcgen half of this ceiling no longer applies; both backends pin the same rcgen.)*
 
 ## Decision
 
@@ -18,7 +18,7 @@ Three facts shape the answer:
    - `aws-lc-rs` fixes the `aws-lc-fips-sys` series, so the module line, and on 3.x keeps resolution off the 4.x line;
    - `rustls` fixes the policy and provider API, which the backend re-exports ([decision 0002](0002-rustls-reexport.md));
    - `rustls-webpki` is called directly by the backend's peer-certificate checks, and rustls requires it by caret, so the pin fixes the version both use;
-   - `rcgen` fixes descriptor availability and its aws-lc-rs requirement, which on 3.x is the ceiling above.
+   - `rcgen` fixes the certificate-request encoding API and descriptors the `csr` module uses. *(Amended 2026-11-09: it also fixed rcgen's aws-lc-rs requirement, which on 3.x was the ceiling above; rcgen 0.15 built with `pem` only has none.)*
 
    Other dependencies, `aws-lc-fips-sys` among them, resolve by caret in a consumer's graph. A pin moves only through a reviewed pull request, which keeps the pin comments and updates every document that names the version.
 2. **A fix in a pinned crate reaches consumers only through a crypto-profile release.** The three crates release together, so a fix in any of the four is a release of all three. There is no supported path to take one ahead of a release.

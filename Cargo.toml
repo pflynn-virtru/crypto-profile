@@ -20,3 +20,8 @@ missing_docs = "deny"
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+
+# rustls/rcgen#459 (branch jgreeer/rcgen:add-public-key-algorithm), pinned to its head commit.
+# Remove when rcgen 0.15.0 is published.
+[patch.crates-io]
+rcgen = { git = "https://github.com/jgreeer/rcgen", rev = "7b1cd91d96a3efc7326ecba868041fd7afe33d62" }
