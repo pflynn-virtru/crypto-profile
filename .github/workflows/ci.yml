@@ -235,6 +235,30 @@ jobs:
       - run: sudo mkdir -p /opt/rust/tmp && sudo chown "$USER" /opt/rust/tmp
       - run: ci/quality.sh mutants ${{ matrix.backend }} ${{ matrix.shard }}/4
 
+  mutants-diff:
+    if: ${{ !github.event.repository.private && github.event_name == 'pull_request' }}
+    name: mutants-diff (${{ matrix.backend }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [crypto-profile-awslc4, crypto-profile-awslc3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: sudo apt-get update && sudo apt-get install -y cmake golang clang
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-mutants@27.1.0
+      - run: sudo mkdir -p /opt/rust/tmp && sudo chown "$USER" /opt/rust/tmp
+      # The checkout is the pull request's merge commit; its first parent is the base it merges onto.
+      - run: ci/quality.sh mutants-diff ${{ matrix.backend }} HEAD^1
+
   backend-links-negative:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
