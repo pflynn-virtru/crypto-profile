@@ -6,7 +6,7 @@
 set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 dir="$root/crypto-profile/enforcement"
-deny() { cargo deny "$@" check bans -A unused-wrapper; }
+deny() { cargo deny --color never "$@" check bans -A unused-wrapper; }
 
 for profile in unrestricted preferred cnsa2 cnsa1 bsi fips1403 fips1402; do
   deny --manifest-path "$root/Cargo.toml" --locked --config "$dir/deny-$profile.toml"
