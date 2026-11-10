@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Build-time enforcement for code that does not call the crate (decision 0018): `enforcement::deny_toml(profile)`, a standalone cargo-deny configuration per profile, and `enforcement::clippy_toml()`, the crate's own `disallowed-methods` list for a consumer's code. Each profile's configuration refuses, anywhere in the shipped dependency tree, on every target and with every feature: other cryptographic libraries; aws-lc-rs, its sys crates and rcgen outside a backend; a second rustls or rustls-webpki; rustls's and rustls-webpki's own providers; crates written only for algorithms the profile does not admit; and crates for algorithms no profile admits. The output for every profile is committed under `crypto-profile/enforcement/`, and `ci/enforcement.sh` checks it against both backends' trees and against fixtures.
 - CI runs `ci/quality.sh mutants-diff` on both backends for every pull request, so the pre-PR mutation gate no longer depends on the contributor's machine.
 
 ## [0.10.0] - 2026-11-05
